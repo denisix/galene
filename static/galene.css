@@ -56,13 +56,13 @@
     float: left;
     width: 50px;
     height: 50px;
-    background: #b681c3;
+    background: #202330;
     border-radius: 25px;
     text-align: center;
     vertical-align: middle;
     font-size: 1.4em;
     padding: 7px;
-    color: #f9f9f9;
+    color: #fff;
 }
 
 .profile-info {
@@ -102,23 +102,27 @@
 #chpwspan a {
     padding: 4px 0;
     font-size: 0.9em;
-    color: #e4157e;
+    color: #4a4f63;
 }
 
 #chpwspan.invisible {
     display: none;
 }
 
+.hidden {
+    display: none !important;
+}
+
 .sidenav .user-logout a {
     font-size: 1em;
     padding: 7px 0 0;
-    color: #e4157e;
+    color: #4a4f63;
     cursor: pointer;
     line-height: .7;
 }
 
 .sidenav .user-logout a:hover {
-    color: #ab0659;
+    color: #202330;
 }
 
 .navbar, .navbar .container, .navbar .container-fluid, .navbar .container-lg, .navbar .container-md, .navbar .container-sm, .navbar .container-xl {
@@ -129,7 +133,7 @@
     align-items: center;
     -webkit-box-pack: justify;
     justify-content: space-between;
-    background: #610a86;
+    background: #202330;
 }
 .navbar {
     position: relative;
@@ -209,14 +213,14 @@
 
 .btn-blue {
     color: #fff;
-    background-color: #007bff;
-    border-color: #007bff;
+    background-color: #202330;
+    border-color: #202330;
 }
 
 .btn-blue:hover {
     color: #fff;
-    background-color: #0069d9;
-    border-color: #0062cc;
+    background-color: #2a2f40;
+    border-color: #2a2f40;
 }
 
 .btn-warn {
@@ -284,7 +288,7 @@
 .users-header {
     height: 3.5rem;
     padding: 10px;
-    background: #610a86;
+    background: #202330;
     font-size: .95rem;
     font-weight: 500;
 }
@@ -729,12 +733,204 @@ h1 {
     width: 100%;
 }
 
+/* Permission status indicators */
+.permission-status {
+    display: flex;
+    justify-content: space-around;
+    margin: 1em 0;
+    padding: 0.5em 0;
+}
+
+.permission-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    padding: 0.5em 1em;
+    border-radius: 0.5em;
+    background-color: #f5f5f5;
+}
+
+.permission-item > .fa-video,
+.permission-item > .fa-microphone {
+    font-size: 1.2em;
+    color: #666;
+}
+
+.permission-text {
+    font-size: 0.9em;
+    color: #555;
+}
+
+.permission-icon {
+    font-size: 1em;
+    margin-left: auto;
+}
+
+/* Loading state (checking permissions) */
+.permission-item.checking .permission-icon {
+    color: #999;
+}
+
+/* OK state - permissions granted */
+.permission-item.ok .permission-icon::before {
+    content: "\f00c";
+    font-family: "Font Awesome 5 Free";
+    font-weight: 900;
+    color: #28a745;
+}
+
+.permission-item.ok {
+    background-color: #d4edda;
+    border: 1px solid #c3e6cb;
+}
+
+.permission-item.ok > .fa-video,
+.permission-item.ok > .fa-microphone {
+    color: #28a745;
+}
+
+/* Error state - permissions denied */
+.permission-item.error .permission-icon::before {
+    content: "\f00d";
+    font-family: "Font Awesome 5 Free";
+    font-weight: 900;
+    color: #dc3545;
+}
+
+.permission-item.error {
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
+}
+
+.permission-item.error > .fa-video,
+.permission-item.error > .fa-microphone {
+    color: #dc3545;
+}
+
+/* Warning state - permissions not yet requested */
+.permission-item.warning .permission-icon::before {
+    content: "\f071";
+    font-family: "Font Awesome 5 Free";
+    font-weight: 900;
+    color: #ffc107;
+}
+
+.permission-item.warning {
+    background-color: #fff3cd;
+    border: 1px solid #ffeaa7;
+}
+
+.permission-item.warning > .fa-video,
+.permission-item.warning > .fa-microphone {
+    color: #856404;
+}
+
+/* Login device selection */
+.device-selection {
+    display: flex;
+    flex-direction: column;
+    gap: 0.8em;
+    margin: 1em 0;
+}
+
+/* Initially hide device selection */
+.device-selection[style*="display:none"] {
+    display: none !important;
+}
+
+.device-card {
+    display: flex;
+    flex-direction: column;
+    padding: 0.8em 1em;
+    border-radius: 0.5em;
+    background-color: #f5f5f5;
+    border: 1px solid #e0e0e0;
+    transition: all 0.2s ease;
+}
+
+/* Initially hide device cards */
+.device-card[style*="display:none"] {
+    display: none !important;
+}
+
+.device-card:hover {
+    background-color: #f9f9f9;
+    border-color: #d0d0d0;
+}
+
+.device-card-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    margin-bottom: 0.5em;
+}
+
+.device-icon {
+    font-size: 1.2em;
+    color: #666;
+    width: 24px;
+    text-align: center;
+}
+
+.device-card-label {
+    font-size: 0.9em;
+    font-weight: 500;
+    color: #555;
+    flex-grow: 1;
+}
+
+.device-card .permission-icon {
+    font-size: 1em;
+    color: #999;
+}
+
+.device-card.ok .permission-icon::before {
+    content: "\f00c";
+    font-family: "Font Awesome 5 Free";
+    font-weight: 900;
+    color: #28a745;
+}
+
+.device-card.ok {
+    background-color: #d4edda;
+    border-color: #c3e6cb;
+}
+
+.device-card.ok .device-icon {
+    color: #28a745;
+}
+
+.device-card.ok .device-card-label {
+    color: #155724;
+}
+
+.device-select {
+    width: 100%;
+    padding: 0.4em 0.6em;
+    font-size: 0.9em;
+    border: 1px solid #ccc;
+    border-radius: 0.3em;
+    background-color: #fff;
+    color: #333;
+    cursor: pointer;
+}
+
+.device-select:focus {
+    outline: none;
+    border-color: #202330;
+    box-shadow: 0 0 0 2px rgba(32, 35, 48, 0.1);
+}
+
 .switch-radio {
     margin: 0;
 }
 
 .invisible {
     display: none;
+}
+
+.hidden {
+    display: none !important;
 }
 
 .error {
@@ -912,7 +1108,7 @@ h1 {
 }
 
 .peer-active {
-    border: 2px solid #610a86;
+    border: 2px solid #202330;
 }
 
 .peer-hidden {
@@ -1363,7 +1559,7 @@ header .collapse:hover {
 }
 
 .file-progress {
-    accent-color: #610a86;
+    accent-color: #202330;
     margin-left: 10px;
     margin-right: 10px;
 }
@@ -1373,11 +1569,11 @@ header .collapse:hover {
 }
 
 #invite-dialog {
-    border: solid 2px #610a86;
+    border: solid 2px #202330;
 }
 
 #invite-dialog button {
-    background-color: #3355ff;
+    background-color: #202330;
     color: white;
     border-radius: .5em;
     padding: .5em;
@@ -1389,7 +1585,7 @@ header .collapse:hover {
 }
 
 #invite-dialog button:hover {
-   background-color: #0022ff;
+   background-color: #2a2f40;
 }
 
 #invite-dialog input {
@@ -1425,4 +1621,62 @@ header .collapse:hover {
 }
 .toastify.info .toast-close {
     color: #000;
+}
+
+/* Permission dialog styles */
+#permission-dialog {
+    border: none;
+    border-radius: .5em;
+    padding: 2em;
+    max-width: 400px;
+    box-shadow: 0 .15rem 1.75rem 0 rgba(31,45,65,.15);
+}
+
+#permission-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.5);
+}
+
+#permission-dialog h2 {
+    margin-top: 0;
+    margin-bottom: 1em;
+    color: #333;
+}
+
+#permission-dialog p {
+    margin-bottom: 1em;
+    color: #555;
+    line-height: 1.5;
+}
+
+#permission-dialog .permission-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 1em;
+    margin-top: 1.5em;
+}
+
+#permission-dialog button {
+    border-radius: .5em;
+    padding: .5em 1em;
+    border: none;
+    cursor: pointer;
+    font-size: 1rem;
+}
+
+#permission-dialog #permission-retry {
+    background-color: #202330;
+    color: white;
+}
+
+#permission-dialog #permission-retry:hover {
+    background-color: #2a2f40;
+}
+
+#permission-dialog #permission-cancel {
+    background-color: #ccc;
+    color: #333;
+}
+
+#permission-dialog #permission-cancel:hover {
+    background-color: #bbb;
 }

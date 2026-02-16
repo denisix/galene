@@ -6,7 +6,6 @@
 // to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 // copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
-//
 // The above copyright notice and this permission notice shall be included in
 // all copies or substantial portions of the Software.
 //
@@ -211,7 +210,12 @@ function reflectSettings() {
     let videoselect = getSelectElement('videoselect');
     if(!settings.hasOwnProperty('video') ||
        !selectOptionAvailable(videoselect, settings.video)) {
-        settings.video = selectOptionDefault(videoselect);
+        // Prefer front camera if available
+        if(window.frontCameraDeviceId && selectOptionAvailable(videoselect, window.frontCameraDeviceId)) {
+            settings.video = window.frontCameraDeviceId;
+        } else {
+            settings.video = selectOptionDefault(videoselect);
+        }
         store = true;
     }
     videoselect.value = settings.video;
@@ -227,10 +231,19 @@ function reflectSettings() {
     if(settings.hasOwnProperty('filter')) {
         getSelectElement('filterselect').value = settings.filter;
     } else {
-        let s = getSelectElement('filterselect').value;
-        if(s) {
-            settings.filter = s;
+        // Default to background-blur filter if available
+        let filterselect = getSelectElement('filterselect');
+        let backgroundBlurOption = Array.from(filterselect.options).find(opt => opt.value === 'background-blur');
+        if(backgroundBlurOption) {
+            settings.filter = 'background-blur';
+            filterselect.value = 'background-blur';
             store = true;
+        } else {
+            let s = filterselect.value;
+            if(s) {
+                settings.filter = s;
+                store = true;
+            }
         }
     }
 
@@ -497,6 +510,25 @@ function gotClose(code, reason) {
     let form = document.getElementById('loginform');
     if(!(form instanceof HTMLFormElement))
         throw new Error('Bad type for loginform');
+
+    // Reset login permission state for next connection
+    loginPermissionsGranted = false;
+    document.getElementById('connectbutton').value = 'Connect';
+    // Hide and reset device selection cards
+    let deviceSelection = document.getElementById('login-device-selection');
+    let cameraCard = document.getElementById('camera-device-card');
+    let microphoneCard = document.getElementById('microphone-device-card');
+    if(deviceSelection) {
+        deviceSelection.classList.add('hidden');
+    }
+    if(cameraCard) {
+        cameraCard.classList.add('hidden');
+        cameraCard.classList.remove('ok');
+    }
+    if(microphoneCard) {
+        microphoneCard.classList.add('hidden');
+        microphoneCard.classList.remove('ok');
+    }
 }
 
 /**
@@ -1003,14 +1035,21 @@ async function setMediaChoices(done) {
     }
 
     let cn = 1, mn = 1;
+    let videoDevices = [];
+    let frontCameraDeviceId = null;
 
     devices.forEach(d => {
         let label = d.label;
         if(d.kind === 'videoinput') {
             if(!label)
                 label = `Camera ${cn}`;
-            addSelectOption(getSelectElement('videoselect'),
-                            label, d.deviceId);
+            // Check if this is a front-facing camera by label
+            let isFront = label.toLowerCase().includes('front') ||
+                         label.toLowerCase().includes('user') ||
+                         label.toLowerCase().includes('selfie') ||
+                         label.toLowerCase().includes('facetime') ||
+                         label.toLowerCase().includes('face');
+            videoDevices.push({deviceId: d.deviceId, label: label, isFront: isFront, order: cn});
             cn++;
         } else if(d.kind === 'audioinput') {
             if(!label)
@@ -1020,6 +1059,34 @@ async function setMediaChoices(done) {
             mn++;
         }
     });
+
+    // If we have permission, try to detect front camera by testing
+    if(videoDevices.length > 0 && videoDevices[0].label !== `Camera 1`) {
+        // We have labels, try to find front camera
+        for(let v of videoDevices) {
+            if(v.isFront) {
+                frontCameraDeviceId = v.deviceId;
+                break;
+            }
+        }
+    }
+
+    // Sort video devices: front-facing cameras first, then others
+    videoDevices.sort((a, b) => {
+        if(a.isFront && !b.isFront) return -1;
+        if(!a.isFront && b.isFront) return 1;
+        return a.order - b.order;
+    });
+
+    // Add sorted video devices to select
+    videoDevices.forEach(v => {
+        addSelectOption(getSelectElement('videoselect'), v.label, v.deviceId);
+    });
+
+    // Store front camera device ID for later use
+    if(frontCameraDeviceId) {
+        window.frontCameraDeviceId = frontCameraDeviceId;
+    }
 
     mediaChoicesDone = done;
 }
@@ -1359,6 +1426,11 @@ let filters = {
     'background-blur': {
         description: 'Background blur',
         predicate: async function() {
+            // Check if browser supports Workers
+            if(!window.Worker) {
+                console.warn('Background blur not supported on this browser');
+                return false;
+            }
             let r = await fetch('/third-party/tasks-vision/vision_bundle.mjs', {
                 method: 'HEAD',
             });
@@ -1376,10 +1448,20 @@ let filters = {
                 throw new Error('Bad type for this');
             if(this.userdata.worker)
                 throw new Error("Worker already running (this shouldn't happen)")
-            this.userdata.worker = new Worker('/background-blur-worker.js');
-            await workerSendReceive(this.userdata.worker, {
-                model: '/third-party/tasks-vision/models/selfie_segmenter.tflite',
-            });
+            try {
+                this.userdata.worker = new Worker('/background-blur-worker.js');
+                await workerSendReceive(this.userdata.worker, {
+                    model: '/third-party/tasks-vision/models/selfie_segmenter.tflite',
+                });
+            } catch(e) {
+                console.warn('Failed to initialize background blur worker:', e);
+                // Clean up if worker creation failed
+                if(this.userdata.worker) {
+                    this.userdata.worker.terminate();
+                    this.userdata.worker = null;
+                }
+                throw e;
+            }
         },
         cleanup: async function() {
             if(this.userdata.worker.onmessage) {
@@ -1713,9 +1795,9 @@ async function addLocalMedia(localId) {
     /** @type{boolean|MediaTrackConstraints} */
     let audio = settings.audio ? {deviceId: settings.audio} : false;
     /** @type{boolean|MediaTrackConstraints} */
-    let video = settings.video ? {deviceId: settings.video} : false;
+    let video = settings.video ? {deviceId: settings.video} : { facingMode: 'user' };
 
-    if(video) {
+    if(video && typeof video === 'object') {
         let resolution = settings.resolution;
         if(resolution) {
             video.width = { ideal: resolution[0] };
@@ -2867,16 +2949,30 @@ async function gotJoined(kind, group, perms, status, data, error, message) {
        serverConnection.permissions.indexOf('present') >= 0 &&
        !findUpMedia('camera')) {
         if(present) {
-            if(present === 'mike')
+            // Get device selections from login form if available
+            let loginVideoSelect = document.getElementById('login-videoselect');
+            let loginAudioSelect = document.getElementById('login-audioselect');
+
+            if(loginVideoSelect && loginVideoSelect.value) {
+                updateSettings({video: loginVideoSelect.value});
+            } else if(present === 'mike') {
                 updateSettings({video: ''});
-            else if(present === 'both')
+            } else if(present === 'both') {
                 delSetting('video');
+            }
+
+            if(loginAudioSelect && loginAudioSelect.value) {
+                updateSettings({audio: loginAudioSelect.value});
+            }
+
             reflectSettings();
 
             let button = getButtonElement('presentbutton');
             button.disabled = true;
             try {
                 await addLocalMedia();
+                // Ensure microphone is not muted by default
+                setLocalMute(false, true);
             } finally {
                 button.disabled = false;
             }
@@ -4322,6 +4418,9 @@ function displayMessage(message) {
     return displayError(message, "info");
 }
 
+// Track if permissions have been granted
+let loginPermissionsGranted = false;
+
 document.getElementById('loginform').onsubmit = async function(e) {
     e.preventDefault();
 
@@ -4331,17 +4430,67 @@ document.getElementById('loginform').onsubmit = async function(e) {
 
     setVisibility('passwordform', true);
 
-    if(getInputElement('presentboth').checked)
-        presentRequested = 'both';
-    else if(getInputElement('presentmike').checked)
-        presentRequested = 'mike';
-    else
-        presentRequested = null;
-    getInputElement('presentoff').checked = true;
+    // Always enable camera and microphone by default
+    presentRequested = 'both';
 
-    // Connect to the server, gotConnected will join.
+    // If permissions not yet granted, request them first
+    if(!loginPermissionsGranted) {
+        // Request permissions before connecting
+        try {
+            // Try to get user media to trigger permission prompt
+            // Use facingMode: 'user' to prefer front-facing camera
+            let stream = await navigator.mediaDevices.getUserMedia({
+                audio: true,
+                video: { facingMode: 'user' }
+            });
+            // Stop the stream immediately, we just needed to check permissions
+            stream.getTracks().forEach(track => track.stop());
+            loginPermissionsGranted = true;
+            // Refresh media choices now that we have permission and device labels
+            mediaChoicesDone = false;
+            await setMediaChoices(false);
+            // Populate login device dropdowns
+            await populateLoginDeviceSelection();
+            // Update connect button to show user can now connect
+            document.getElementById('connectbutton').value = 'Join Now';
+            // Don't connect yet - let user select devices and click Connect again
+            return;
+        } catch(err) {
+            console.error('Permission denied:', err);
+            // Show permission modal
+            showPermissionModal();
+            return;
+        }
+    }
+
+    // Permissions already granted, connect to server
     serverConnect();
 };
+
+/**
+ * Show the permission denial modal
+ */
+function showPermissionModal() {
+    let dialog = document.getElementById('permission-dialog');
+    if(!(dialog instanceof HTMLDialogElement))
+        throw new Error('Bad type for permission-dialog');
+
+    dialog.showModal();
+
+    // Set up retry button
+    let retryButton = document.getElementById('permission-retry');
+    retryButton.onclick = async function() {
+        dialog.close();
+        // Trigger form submission again to retry permissions
+        document.getElementById('loginform').dispatchEvent(new Event('submit'));
+    };
+
+    // Set up cancel button
+    let cancelButton = document.getElementById('permission-cancel');
+    cancelButton.onclick = function() {
+        dialog.close();
+    };
+}
 
 document.getElementById('disconnectbutton').onclick = function(e) {
     serverConnection.close();
@@ -4481,9 +4630,141 @@ async function start() {
         window.location.href = groupStatus.authPortal;
     } else {
         setVisibility('login-container', true);
-        document.getElementById('username').focus()
+        document.getElementById('username').focus();
     }
     setViewportHeight();
+}
+
+/**
+ * Populate the login form device selection dropdowns
+ */
+async function populateLoginDeviceSelection() {
+    // Safety check for document
+    if(typeof document === 'undefined' || !document.getElementById) {
+        console.error('document is not available');
+        return;
+    }
+
+    let loginVideoSelect = document.getElementById('login-videoselect');
+    let loginAudioSelect = document.getElementById('login-audioselect');
+    let deviceSelectionDiv = document.getElementById('login-device-selection');
+    let cameraCard = document.getElementById('camera-device-card');
+    let microphoneCard = document.getElementById('microphone-device-card');
+
+    if(!loginVideoSelect || !loginAudioSelect || !deviceSelectionDiv)
+        return;
+
+    // Check if classList is supported
+    if(!cameraCard.classList || !microphoneCard.classList) {
+        console.error('classList not supported');
+        return;
+    }
+
+    // Clear existing options
+    loginVideoSelect.innerHTML = '';
+    loginAudioSelect.innerHTML = '';
+
+    // Add "off" option
+    let videoOffOption = new Option('Off', '');
+    loginVideoSelect.add(videoOffOption);
+
+    let audioOffOption = new Option('Off', '');
+    loginAudioSelect.add(audioOffOption);
+
+    try {
+        // Enumerate devices directly
+        let devices = await navigator.mediaDevices.enumerateDevices();
+        let cn = 1, mn = 1;
+        let frontCameraDeviceId = null;
+        let hasVideoDevices = false;
+        let hasAudioDevices = false;
+
+        for(let d of devices) {
+            if(d.kind === 'videoinput') {
+                hasVideoDevices = true;
+                let label = d.label || `Camera ${cn}`;
+                let option = new Option(label, d.deviceId);
+
+                // Check if front camera
+                let isFront = label.toLowerCase().includes('front') ||
+                             label.toLowerCase().includes('user') ||
+                             label.toLowerCase().includes('selfie') ||
+                             label.toLowerCase().includes('facetime') ||
+                             label.toLowerCase().includes('face');
+                if(isFront && !frontCameraDeviceId) {
+                    frontCameraDeviceId = d.deviceId;
+                }
+
+                loginVideoSelect.add(option);
+                cn++;
+            } else if(d.kind === 'audioinput') {
+                hasAudioDevices = true;
+                let label = d.label || `Microphone ${mn}`;
+                let option = new Option(label, d.deviceId);
+                loginAudioSelect.add(option);
+                mn++;
+            }
+        }
+
+        // Show and mark camera card as OK if devices found
+        if(hasVideoDevices) {
+            if(cameraCard.classList) {
+                cameraCard.classList.remove('hidden');
+                cameraCard.classList.add('ok');
+            }
+
+            // Set default selection (prefer front camera)
+            if(frontCameraDeviceId) {
+                loginVideoSelect.value = frontCameraDeviceId;
+                window.frontCameraDeviceId = frontCameraDeviceId;
+            } else if(loginVideoSelect.options.length > 1) {
+                loginVideoSelect.selectedIndex = 1; // First actual camera
+            }
+        } else {
+            if(cameraCard && cameraCard.classList) {
+                cameraCard.classList.add('hidden');
+                cameraCard.classList.remove('ok');
+            }
+        }
+
+        // Show and mark microphone card as OK if devices found
+        if(hasAudioDevices) {
+            if(microphoneCard.classList) {
+                microphoneCard.classList.remove('hidden');
+                microphoneCard.classList.add('ok');
+            }
+
+            // Select first non-empty audio option
+            if(loginAudioSelect.options.length > 1) {
+                loginAudioSelect.selectedIndex = 1; // First actual microphone
+            }
+        } else {
+            if(microphoneCard && microphoneCard.classList) {
+                microphoneCard.classList.add('hidden');
+                microphoneCard.classList.remove('ok');
+            }
+        }
+
+        // Show the device selection container if we have any devices
+        if(hasVideoDevices || hasAudioDevices) {
+            if(deviceSelectionDiv.classList) {
+                deviceSelectionDiv.classList.remove('hidden');
+            } else {
+                deviceSelectionDiv.style.display = 'flex';
+            }
+        }
+    } catch(e) {
+        console.error('Error enumerating devices:', e);
+        // Hide device cards on error
+        if(cameraCard && cameraCard.classList) {
+            cameraCard.classList.add('hidden');
+            cameraCard.classList.remove('ok');
+        }
+        if(microphoneCard && microphoneCard.classList) {
+            microphoneCard.classList.add('hidden');
+            microphoneCard.classList.remove('ok');
+        }
+    }
 }
 
 start();

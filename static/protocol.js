@@ -335,8 +335,18 @@ ServerConnection.prototype.connect = function(url) {
     }, 10000);
 
     this.socket.onerror = function(e) {
-        if(sc.onerror)
-            sc.onerror.call(sc, new Error('Socket error: ' + e));
+        if(sc.onerror) {
+            let errorMessage = 'Socket error';
+            if(e && typeof e === 'object') {
+                if(e.message)
+                    errorMessage = 'Socket error: ' + e.message;
+                else if(e.type)
+                    errorMessage = 'Socket error: ' + e.type;
+            } else if(e) {
+                errorMessage = 'Socket error: ' + e;
+            }
+            sc.onerror.call(sc, new Error(errorMessage));
+        }
     };
     this.socket.onopen = function(e) {
         try {

@@ -115,20 +115,25 @@
                       <input id="password" type="password" name="password"
                              autocomplete="current-password" class="form-control"/>
                     </div>
-                    <label>Enable at start:</label>
-                    <div class="present-switch">
-                      <p class="switch-radio">
-                        <input id="presentoff" type="radio" name="presentradio" value="" checked/>
-                        <label for="presentoff">Nothing</label>
-                      </p>
-                      <p class="switch-radio">
-                        <input id="presentmike" type="radio" name="presentradio" value="mike"/>
-                        <label for="presentmike">Microphone</label>
-                      </p>
-                      <p class="switch-radio">
-                        <input id="presentboth" type="radio" name="presentradio" value="both"/>
-                        <label for="presentboth">Camera and microphone</label>
-                      </p>
+                    <div class="device-selection hidden" id="login-device-selection">
+                      <div class="device-card hidden" id="camera-device-card">
+                        <div class="device-card-header">
+                          <i class="fas fa-video device-icon" aria-hidden="true"></i>
+                          <span class="device-card-label">Camera</span>
+                          <i class="permission-icon fas fa-circle-notch fa-spin" aria-hidden="true"></i>
+                        </div>
+                        <select id="login-videoselect" class="device-select">
+                        </select>
+                      </div>
+                      <div class="device-card hidden" id="microphone-device-card">
+                        <div class="device-card-header">
+                          <i class="fas fa-microphone device-icon" aria-hidden="true"></i>
+                          <span class="device-card-label">Microphone</span>
+                          <i class="permission-icon fas fa-circle-notch fa-spin" aria-hidden="true"></i>
+                        </div>
+                        <select id="login-audioselect" class="device-select">
+                        </select>
+                      </div>
                     </div>
                     <div class="clear"></div>
                     <div class="connect">
@@ -303,9 +308,21 @@
       </form>
     </dialog>
 
-    <script src="/protocol.js" defer></script>
-    <script src="/third-party/toastify/toastify.js" defer></script>
-    <script src="/third-party/contextual/contextual.js" defer></script>
-    <script src="/galene.js" defer></script>
+    <dialog id="permission-dialog">
+      <form method="dialog" id="permission-form">
+        <h2>Permissions Required</h2>
+        <p>Camera and microphone permissions are required to join this group.</p>
+        <p>Please allow access when prompted by your browser.</p>
+        <div class="permission-buttons">
+          <button id="permission-retry" type="button" class="btn btn-blue">Retry</button>
+          <button id="permission-cancel" value="cancel" type="button" class="btn btn-default">Cancel</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="/protocol.js"></script>
+    <script src="/third-party/toastify/toastify.js"></script>
+    <script src="/third-party/contextual/contextual.js"></script>
+    <script src="/galene.js"></script>
   </body>
 </html>
