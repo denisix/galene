@@ -22,6 +22,27 @@
 
 let imageSegmenter;
 
+// Suppress MediaPipe internal errors about document not being available
+// These happen during import but don't prevent functionality
+self.addEventListener('error', function(e) {
+    if(e.message && e.message.includes('document')) {
+        console.warn('[Worker] Suppressing MediaPipe document error (expected in worker context)');
+        e.preventDefault();
+        return false;
+    }
+    return true;
+});
+
+// Handle unhandled promise rejections
+self.addEventListener('unhandledrejection', function(e) {
+    if(e.reason && (e.reason.message && e.reason.message.includes('document') || String(e.reason).includes('document'))) {
+        console.warn('[Worker] Suppressing MediaPipe document promise rejection');
+        e.preventDefault();
+        return false;
+    }
+    return true;
+});
+
 async function loadImageSegmenter(model) {
     let module = await import('/third-party/tasks-vision/vision_bundle.mjs');
     let vision = await module.FilesetResolver.forVisionTasks(

@@ -475,6 +475,10 @@ async function join() {
         await serverConnection.join(group, username, credentials);
     } catch(e) {
         console.error(e);
+        // Add login context to error
+        if (e instanceof Error) {
+            e.message = `Login failed for user '${username}': ${e.message}`;
+        }
         displayError(e);
         serverConnection.close();
     }
@@ -542,7 +546,7 @@ function gotDownStream(c) {
     };
     c.onerror = function(e) {
         console.error(e);
-        displayError(e.toString());
+        displayError(e);
     };
     c.ondowntrack = function(track, transceiver, stream) {
         setMedia(c);
@@ -1448,18 +1452,34 @@ let filters = {
                 throw new Error('Bad type for this');
             if(this.userdata.worker)
                 throw new Error("Worker already running (this shouldn't happen)")
+            console.log('[BackgroundBlur] Initializing worker...');
             try {
                 this.userdata.worker = new Worker('/background-blur-worker.js');
+                // Add error handler to suppress MediaPipe internal errors
+                this.userdata.worker.onerror = function(e) {
+                    // Suppress MediaPipe internal "document is not defined" errors
+                    // The library tries to access document from worker context
+                    if(e.message && e.message.includes('document')) {
+                        console.warn('[BackgroundBlur] Suppressing MediaPipe document error');
+                        e.preventDefault();
+                        return false;
+                    }
+                    console.error('[BackgroundBlur] Worker error:', e);
+                    return false;
+                };
+                console.log('[BackgroundBlur] Sending model to worker...');
                 await workerSendReceive(this.userdata.worker, {
                     model: '/third-party/tasks-vision/models/selfie_segmenter.tflite',
                 });
+                console.log('[BackgroundBlur] Worker initialized successfully');
             } catch(e) {
-                console.warn('Failed to initialize background blur worker:', e);
+                console.error('[BackgroundBlur] Failed to initialize worker:', e);
                 // Clean up if worker creation failed
                 if(this.userdata.worker) {
                     this.userdata.worker.terminate();
                     this.userdata.worker = null;
                 }
+                // Re-throw to let the filter know init failed
                 throw e;
             }
         },
@@ -2397,8 +2417,16 @@ function registerControlHandlers(localId, media, container) {
 function delMedia(localId) {
     let mediadiv = document.getElementById('peers');
     let peer = document.getElementById('peer-' + localId);
-    if(!peer)
-        throw new Error('Removing unknown media');
+    if(!peer) {
+        let err = new Error(`Removing unknown media: localId '${localId}' not found in DOM`);
+        err.name = 'MediaNotFound';
+        err.localId = localId;
+        // Log all current peer elements for debugging
+        let peers = document.querySelectorAll('[id^="peer-"]');
+        err.existingPeers = Array.from(peers).map(p => p.id);
+        console.error('[delMedia] Attempted to remove non-existent peer:', localId, 'Existing:', err.existingPeers);
+        throw err;
+    }
 
     let media = /** @type{HTMLVideoElement} */
         (document.getElementById('media-' + localId));
@@ -2879,7 +2907,12 @@ async function gotJoined(kind, group, perms, status, data, error, message) {
             setVisibility('passwordform', false);
         } else {
             token = null;
-            displayError('The server said: ' + message);
+            let err = new Error('The server said: ' + message);
+            err.name = 'ServerError';
+            err.serverError = error;
+            // Capture stack at this point
+            Error.captureStackTrace(err, gotJoined);
+            displayError(err);
         }
         closeSafariStream();
         this.close();
@@ -3181,7 +3214,14 @@ function gotUserMessage(id, dest, username, time, privileged, kind, error, messa
             return;
         }
         let from = id ? (username || 'Anonymous') : 'The Server';
-        displayError(`${from} said: ${message}`, kind);
+        let err = new Error(`${from} said: ${message}`);
+        err.name = kind === 'error' ? 'ServerError' : kind === 'kicked' ? 'Kicked' : kind;
+        err.serverMessage = message;
+        err.serverKind = kind;
+        // Capture stack at this point for debugging
+        if(Error.captureStackTrace)
+            Error.captureStackTrace(err, gotUserMessage);
+        displayError(err, kind);
         break;
     case 'mute':
         if(!privileged) {
@@ -4372,6 +4412,34 @@ function chatResizer(e) {
 document.getElementById('resizer').addEventListener('mousedown', chatResizer, false);
 
 /**
+ * Format error with stack trace for debugging
+ * @param {unknown} err
+ * @returns {string}
+ */
+function formatErrorWithStack(err) {
+    if (err instanceof Error) {
+        let msg = err.message || String(err);
+        if (err.stack) {
+            // Extract the useful part of the stack trace
+            let stack = err.stack;
+            // Remove the error message from the stack if it's duplicated
+            let lines = stack.split('\n');
+            if (lines.length > 0 && lines[0].includes(msg)) {
+                lines = lines.slice(1);
+            }
+            // Add first few lines of stack trace
+            let stackPreview = lines.slice(0, 4).join('\n');
+            msg += '\n\nStack:\n' + stackPreview;
+            if (lines.length > 4) {
+                msg += `\n...and ${lines.length - 4} more`;
+            }
+        }
+        return msg;
+    }
+    return String(err);
+}
+
+/**
  * @param {unknown} message
  * @param {string} [level]
  */
@@ -4393,10 +4461,13 @@ function displayError(message, level) {
         break;
     }
 
+    let displayMsg = formatErrorWithStack(message);
+    console.error('[displayError]', displayMsg);
+
     /** @ts-ignore */
     Toastify({
-        text: message,
-        duration: 4000,
+        text: displayMsg,
+        duration: 6000,
         close: true,
         position: position,
         gravity: gravity,
@@ -4562,7 +4633,7 @@ async function serverConnect() {
     serverConnection.onconnected = gotConnected;
     serverConnection.onerror = function(e) {
         console.error(e);
-        displayError(e.toString());
+        displayError(e);
     };
     serverConnection.onpeerconnection = onPeerConnection;
     serverConnection.onclose = gotClose;
@@ -4583,7 +4654,11 @@ async function serverConnect() {
         await serverConnection.connect(url);
     } catch(e) {
         console.error(e);
-        displayError(e.message ? e.message : "Couldn't connect to " + url);
+        // Enhance error with connection context
+        if (e instanceof Error && !e.message.includes(url)) {
+            e.message = `Connection to ${url} failed: ${e.message}`;
+        }
+        displayError(e);
     }
 }
 
@@ -4766,5 +4841,25 @@ async function populateLoginDeviceSelection() {
         }
     }
 }
+
+// Global error handlers for catching unhandled errors with stack traces
+window.addEventListener('error', function(e) {
+    console.error('[Global Error Handler]', e.message, e.filename, e.lineno, e.colno, e.error);
+    let err = e.error || new Error(e.message);
+    if (!err.stack && e.filename) {
+        err.stack = `at ${e.filename}:${e.lineno}:${e.colno}`;
+    }
+    displayError(err);
+});
+
+window.addEventListener('unhandledrejection', function(e) {
+    console.error('[Unhandled Promise Rejection]', e.reason);
+    let err = e.reason;
+    if (!(err instanceof Error)) {
+        err = new Error(String(err));
+    }
+    displayError(err);
+    e.preventDefault();
+});
 
 start();

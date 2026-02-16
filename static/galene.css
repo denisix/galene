@@ -1601,6 +1601,11 @@ header .collapse:hover {
 }
 
 /* Style for the toastify  messages shall be within a css file */
+.toastify {
+    white-space: pre-line;
+    max-width: 400px;
+    text-align: left;
+}
 .toastify.error {
     background: linear-gradient(to right, #e20a0a, #df2d2d);
     color: #fff;

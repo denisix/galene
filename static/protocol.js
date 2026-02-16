@@ -336,16 +336,33 @@ ServerConnection.prototype.connect = function(url) {
 
     this.socket.onerror = function(e) {
         if(sc.onerror) {
-            let errorMessage = 'Socket error';
-            if(e && typeof e === 'object') {
+            // WebSocket error events often have no useful information
+            // Provide context about what was being attempted
+            let state = sc.socket ? sc.socket.readyState : 'unknown';
+            let stateName = ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'][state] || state;
+            let errorMessage = `WebSocket connection error (state: ${stateName}`;
+            if(sc.group)
+                errorMessage += `, group: ${sc.group}`;
+            if(sc.username)
+                errorMessage += `, user: ${sc.username}`;
+            errorMessage += ')';
+
+            // Try to extract any useful info from the event
+            if(e) {
                 if(e.message)
-                    errorMessage = 'Socket error: ' + e.message;
+                    errorMessage += ': ' + e.message;
                 else if(e.type)
-                    errorMessage = 'Socket error: ' + e.type;
-            } else if(e) {
-                errorMessage = 'Socket error: ' + e;
+                    errorMessage += ' [' + e.type + ']';
             }
-            sc.onerror.call(sc, new Error(errorMessage));
+
+            let err = new Error(errorMessage);
+            err.name = 'SocketError';
+            err.websocketState = stateName;
+            err.websocketUrl = sc.socket && sc.socket.url;
+            // Capture stack at this point for better debugging
+            if(Error.captureStackTrace)
+                Error.captureStackTrace(err, sc.socket.onerror);
+            sc.onerror.call(sc, err);
         }
     };
     this.socket.onopen = function(e) {
